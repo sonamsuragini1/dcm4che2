@@ -6,7 +6,6 @@ on:
   pull_request:
     branches:
       - main
-
 jobs:
   sonar:
     name: Run SonarCloud analysis on dcm4che-core
