@@ -23,8 +23,7 @@ jobs:
           distribution: 'temurin'
 
       - name: Build only dcm4che-core module
-        run: mvn clean install --projects dcm4che-core --also-make -DskipTests
-
+        run: mvn clean install -pl dcm4che-core -am -DskipTests
       - name: Run SonarCloud analysis using Maven plugin on dcm4che-core
         working-directory: dcm4che-core
         env:
