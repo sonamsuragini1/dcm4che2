@@ -1,5 +1,4 @@
 name: SonarCloud Scan - dcm4che-core
-
 on:
   push:
     branches:
@@ -7,10 +6,9 @@ on:
   pull_request:
     branches:
       - main
-
 jobs:
   sonar:
-    name: Run SonarCloud analysis and export report
+    name: Run SonarCloud analysis on dcm4che-core
     runs-on: ubuntu-latest
 
     steps:
@@ -24,8 +22,7 @@ jobs:
           distribution: 'temurin'
 
       - name: Build only dcm4che-core module
-        run: mvn clean install -DskipTests
-
+        run: mvn clean install -pl dcm4che-core -am -DskipTests
       - name: Run SonarCloud analysis using Maven plugin on dcm4che-core
         working-directory: dcm4che-core
         env:
@@ -41,23 +38,3 @@ jobs:
             -Dsonar.host.url=https://sonarcloud.io \
             -Dsonar.login=$SONAR_TOKEN \
             -Dsonar.branch.name=main
-
-      - name: Generate SonarCloud report
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: |
-          mkdir -p report
-          curl -s -u $SONAR_TOKEN: \
-            "https://sonarcloud.io/api/measures/component?component=sonamsuragini1_dcm4che2&metricKeys=bugs,vulnerabilities,code_smells,coverage,duplicated_lines_density" \
-            -o report/sonar-report.json
-
-          echo "## SonarCloud Summary" > report/sonar-report.md
-          echo "\`\`\`json" >> report/sonar-report.md
-          cat report/sonar-report.json >> report/sonar-report.md
-          echo "\`\`\`" >> report/sonar-report.md
-
-      - name: Upload report artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: sonarcloud-report
-          path: report/
