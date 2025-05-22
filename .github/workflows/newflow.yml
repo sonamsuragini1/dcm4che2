@@ -1,56 +1,9 @@
-name: SonarCloud Scan - dcm4che-core
-
-on:
-  push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
-
-jobs:
-  sonar:
-    name: Run SonarCloud analysis and export PDF report
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
-
-      - name: Set up JDK 11
-        uses: actions/setup-java@v3
-        with:
-          java-version: '11'
-          distribution: 'temurin'
-
-      - name: Build only dcm4che-core module
-        run: mvn clean install -DskipTests
-
-      - name: Run SonarCloud analysis using Maven plugin on dcm4che-core
-        working-directory: dcm4che-core
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: |
-          mvn org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
-            -Dsonar.projectKey=sonamsuragini1_dcm4che2 \
-            -Dsonar.organization=sonamsuragini1 \
-            -Dsonar.sources=src/main/java \
-            -Dsonar.tests=src/test/java \
-            -Dsonar.java.binaries=target/classes \
-            -Dsonar.projectBaseDir=$(pwd) \
-            -Dsonar.host.url=https://sonarcloud.io \
-            -Dsonar.login=$SONAR_TOKEN \
-            -Dsonar.branch.name=main
-
-      - name: Install Python dependencies
-        run: pip install requests reportlab
-
-      - name: Generate PDF Report from SonarCloud
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: |
-          mkdir -p report
-          cat <<EOF > generate_report.py
+- name: Generate PDF Report from SonarCloud
+  env:
+    SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+  run: |
+    mkdir -p report
+    cat <<EOF > generate_report.py
 import requests
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
@@ -108,10 +61,4 @@ else:
 c.save()
 EOF
 
-          python3 generate_report.py
-
-      - name: Upload PDF report artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: sonarcloud-pdf-report
-          path: report/sonarcloud_report.pdf
+    python3 generate_report.py
