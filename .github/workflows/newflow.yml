@@ -1,4 +1,5 @@
 name: SonarCloud Scan - dcm4che-core
+
 on:
   push:
     branches:
@@ -6,9 +7,10 @@ on:
   pull_request:
     branches:
       - main
+
 jobs:
   sonar:
-    name: Run SonarCloud analysis on dcm4che-core
+    name: Run SonarCloud analysis and export PDF report
     runs-on: ubuntu-latest
 
     steps:
@@ -23,6 +25,7 @@ jobs:
 
       - name: Build only dcm4che-core module
         run: mvn clean install -DskipTests
+
       - name: Run SonarCloud analysis using Maven plugin on dcm4che-core
         working-directory: dcm4che-core
         env:
@@ -38,3 +41,43 @@ jobs:
             -Dsonar.host.url=https://sonarcloud.io \
             -Dsonar.login=$SONAR_TOKEN \
             -Dsonar.branch.name=main
+
+      - name: Install Python dependencies
+        run: pip install requests reportlab
+
+      - name: Generate PDF Report from SonarCloud
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        run: |
+          mkdir -p report
+          python3 <<EOF
+          import requests
+          from reportlab.lib.pagesizes import letter
+          from reportlab.pdfgen import canvas
+
+          SONAR_TOKEN = "${{ secrets.SONAR_TOKEN }}"
+          component = "sonamsuragini1_dcm4che2"
+          url = f"https://sonarcloud.io/api/measures/component?component={component}&metricKeys=bugs,vulnerabilities,code_smells,coverage,duplicated_lines_density"
+
+          response = requests.get(url, auth=(SONAR_TOKEN, ""))
+          data = response.json()
+
+          metrics = {item["metric"]: item["value"] for item in data["component"]["measures"]}
+
+          c = canvas.Canvas("report/sonarcloud_report.pdf", pagesize=letter)
+          c.setFont("Helvetica-Bold", 16)
+          c.drawString(50, 750, "SonarCloud Report - dcm4che-core")
+          c.setFont("Helvetica", 12)
+          y = 700
+          for metric, value in metrics.items():
+              c.drawString(50, y, f"{metric.replace('_', ' ').capitalize()}: {value}")
+              y -= 25
+
+          c.save()
+          EOF
+
+      - name: Upload PDF report artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sonarcloud-pdf-report
+          path: report/sonarcloud_report.pdf
