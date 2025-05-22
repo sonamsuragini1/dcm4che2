@@ -65,11 +65,15 @@ metrics_response = requests.get(metrics_url, auth=(SONAR_TOKEN, ""))
 metrics_data = metrics_response.json()
 metrics = {item["metric"]: item["value"] for item in metrics_data["component"]["measures"]}
 
-# Fetch vulnerabilities
-issues_url = f"https://sonarcloud.io/api/issues/search?componentKeys={component}&types=VULNERABILITY&ps=50"
-issues_response = requests.get(issues_url, auth=(SONAR_TOKEN, ""))
-issues_data = issues_response.json()
-vulnerabilities = issues_data.get("issues", [])
+# Fetch vulnerabilities and security hotspots
+vuln_url = f"https://sonarcloud.io/api/issues/search?componentKeys={component}&types=VULNERABILITY&ps=100"
+hotspot_url = f"https://sonarcloud.io/api/issues/search?componentKeys={component}&types=SECURITY_HOTSPOT&ps=100"
+
+vuln_resp = requests.get(vuln_url, auth=(SONAR_TOKEN, ""))
+hotspot_resp = requests.get(hotspot_url, auth=(SONAR_TOKEN, ""))
+
+vulnerabilities = vuln_resp.json().get("issues", [])
+hotspots = hotspot_resp.json().get("issues", [])
 
 # Generate PDF
 c = canvas.Canvas("report/sonarcloud_report.pdf", pagesize=letter)
@@ -82,6 +86,7 @@ for metric, value in metrics.items():
     c.drawString(50, y, f"{metric.replace('_', ' ').capitalize()}: {value}")
     y -= 20
 
+# Section: Vulnerabilities
 y -= 10
 c.setFont("Helvetica-Bold", 14)
 c.drawString(50, y, "Security Vulnerabilities")
@@ -89,7 +94,8 @@ y -= 20
 c.setFont("Helvetica", 11)
 
 if not vulnerabilities:
-    c.drawString(50, y, "No security vulnerabilities found.")
+    c.drawString(50, y, "No vulnerabilities found.")
+    y -= 20
 else:
     for issue in vulnerabilities:
         msg = issue.get("message", "No message")
@@ -105,6 +111,32 @@ else:
                 c.showPage()
                 c.setFont("Helvetica", 11)
                 y = 750
+
+# Section: Security Hotspots
+y -= 20
+c.setFont("Helvetica-Bold", 14)
+c.drawString(50, y, "Security Hotspots")
+y -= 20
+c.setFont("Helvetica", 11)
+
+if not hotspots:
+    c.drawString(50, y, "No security hotspots found.")
+else:
+    for issue in hotspots:
+        msg = issue.get("message", "No message")
+        severity = issue.get("severity", "UNKNOWN")
+        file_path = issue.get("component", "").split(":")[-1]
+        line = issue.get("line", "N/A")
+        rule = issue.get("rule", "").split(":")[-1]
+        entry = f"[{severity}] {rule} in {file_path}:{line} — {msg}"
+        for line_chunk in [entry[i:i+100] for i in range(0, len(entry), 100)]:
+            c.drawString(50, y, line_chunk)
+            y -= 15
+            if y < 50:
+                c.showPage()
+                c.setFont("Helvetica", 11)
+                y = 750
+
 c.save()
 EOF
           python3 generate_report.py
