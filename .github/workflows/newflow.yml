@@ -1,117 +1,65 @@
-name: SonarCloud Scan - dcm4che-core
+- name: Generate PDF Report from SonarCloud
+  env:
+    SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+  run: |
+    mkdir -p report
+    cat <<EOF > generate_report.py
+import requests
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
+from reportlab.lib import colors
+import os
 
-on:
-  push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
+SONAR_TOKEN = os.environ.get("SONAR_TOKEN")
+component = "sonamsuragini1_dcm4che2"
 
-jobs:
-  sonar:
-    name: Run SonarCloud analysis and export PDF report
-    runs-on: ubuntu-latest
+# Fetch summary metrics
+metrics_url = f"https://sonarcloud.io/api/measures/component?component={component}&metricKeys=bugs,vulnerabilities,code_smells,coverage,duplicated_lines_density"
+metrics_response = requests.get(metrics_url, auth=(SONAR_TOKEN, ""))
+metrics_data = metrics_response.json()
+metrics = {item["metric"]: item["value"] for item in metrics_data["component"]["measures"]}
 
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v3
+# Fetch detailed vulnerabilities
+issues_url = f"https://sonarcloud.io/api/issues/search?componentKeys={component}&types=VULNERABILITY&ps=50"
+issues_response = requests.get(issues_url, auth=(SONAR_TOKEN, ""))
+issues_data = issues_response.json()
+vulnerabilities = issues_data.get("issues", [])
 
-      - name: Set up JDK 11
-        uses: actions/setup-java@v3
-        with:
-          java-version: '11'
-          distribution: 'temurin'
+# Generate PDF
+c = canvas.Canvas("report/sonarcloud_report.pdf", pagesize=letter)
+c.setFont("Helvetica-Bold", 16)
+c.drawString(50, 750, "SonarCloud Report - dcm4che-core")
 
-      - name: Build only dcm4che-core module
-        run: mvn clean install -DskipTests
+c.setFont("Helvetica", 12)
+y = 720
+for metric, value in metrics.items():
+    c.drawString(50, y, f"{metric.replace('_', ' ').capitalize()}: {value}")
+    y -= 20
 
-      - name: Run SonarCloud analysis using Maven plugin on dcm4che-core
-        working-directory: dcm4che-core
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: |
-          mvn org.sonarsource.scanner.maven:sonar-maven-plugin:sonar \
-            -Dsonar.projectKey=sonamsuragini1_dcm4che2 \
-            -Dsonar.organization=sonamsuragini1 \
-            -Dsonar.sources=src/main/java \
-            -Dsonar.tests=src/test/java \
-            -Dsonar.java.binaries=target/classes \
-            -Dsonar.projectBaseDir=$(pwd) \
-            -Dsonar.host.url=https://sonarcloud.io \
-            -Dsonar.login=$SONAR_TOKEN \
-            -Dsonar.branch.name=main
+y -= 10
+c.setFont("Helvetica-Bold", 14)
+c.drawString(50, y, "Security Vulnerabilities")
+y -= 20
+c.setFont("Helvetica", 11)
 
-      - name: Install Python dependencies
-        run: pip install requests reportlab
+if not vulnerabilities:
+    c.drawString(50, y, "No security vulnerabilities found.")
+else:
+    for issue in vulnerabilities:
+        msg = issue.get("message", "No message")
+        severity = issue.get("severity", "UNKNOWN")
+        file_path = issue.get("component", "").split(":")[-1]
+        line = issue.get("line", "N/A")
+        rule = issue.get("rule", "").split(":")[-1]
+        entry = f"[{severity}] {rule} in {file_path}:{line} — {msg}"
+        for line_chunk in [entry[i:i+100] for i in range(0, len(entry), 100)]:
+            c.drawString(50, y, line_chunk)
+            y -= 15
+            if y < 50:
+                c.showPage()
+                c.setFont("Helvetica", 11)
+                y = 750
+c.save()
+EOF
 
-      - name: Generate PDF Report from SonarCloud
-        env:
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: |
-          mkdir -p report
-          python3 <<EOF
-          import requests
-          from reportlab.lib.pagesizes import letter
-          from reportlab.pdfgen import canvas
-
-          SONAR_TOKEN = "${{ secrets.SONAR_TOKEN }}"
-          component = "sonamsuragini1_dcm4che2"
-
-          # Fetch metrics
-          metrics_url = f"https://sonarcloud.io/api/measures/component?component={component}&metricKeys=bugs,vulnerabilities,code_smells,coverage,duplicated_lines_density"
-          metrics_response = requests.get(metrics_url, auth=(SONAR_TOKEN, ""))
-          metrics_data = metrics_response.json()
-          metrics = {item["metric"]: item["value"] for item in metrics_data["component"]["measures"]}
-
-          # Fetch all issues (bugs, vulnerabilities, code smells)
-          issues_url = f"https://sonarcloud.io/api/issues/search?componentKeys={component}&ps=100&resolved=false"
-          issues_response = requests.get(issues_url, auth=(SONAR_TOKEN, ""))
-          issues_data = issues_response.json()
-          issues = issues_data.get("issues", [])
-
-          # Generate PDF
-          c = canvas.Canvas("report/sonarcloud_report.pdf", pagesize=letter)
-          c.setFont("Helvetica-Bold", 16)
-          c.drawString(50, 750, "SonarCloud Report - dcm4che-core")
-
-          y = 720
-          c.setFont("Helvetica", 12)
-          for metric, value in metrics.items():
-              c.drawString(50, y, f"{metric.replace('_', ' ').capitalize()}: {value}")
-              y -= 20
-
-          y -= 10
-          c.setFont("Helvetica-Bold", 14)
-          c.drawString(50, y, "Issues (Unresolved)")
-          y -= 20
-          c.setFont("Helvetica", 10)
-
-          if not issues:
-              c.drawString(50, y, "No unresolved issues found.")
-          else:
-              for issue in issues:
-                  if y < 100:
-                      c.showPage()
-                      y = 750
-                      c.setFont("Helvetica", 10)
-                  msg = issue.get("message", "No message")
-                  severity = issue.get("severity", "UNKNOWN")
-                  issue_type = issue.get("type", "UNKNOWN")
-                  file_path = issue.get("component", "").split(":")[-1]
-                  line = issue.get("line", "N/A")
-                  rule = issue.get("rule", "").split(":")[-1]
-                  line_text = f"[{issue_type}] [{severity}] {rule} in {file_path}:{line} — {msg}"
-                  # Wrap if too long
-                  for chunk in [line_text[i:i+100] for i in range(0, len(line_text), 100)]:
-                      c.drawString(50, y, chunk)
-                      y -= 15
-
-          c.save()
-          EOF
-
-      - name: Upload PDF report artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: sonarcloud-pdf-report
-          path: report/sonarcloud_report.pdf
+    python3 generate_report.py
