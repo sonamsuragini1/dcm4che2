@@ -10,7 +10,7 @@ on:
 
 jobs:
   sonar:
-    name: Run SonarCloud analysis and export PDF report
+    name: Run SonarCloud analysis and export report
     runs-on: ubuntu-latest
 
     steps:
@@ -42,106 +42,22 @@ jobs:
             -Dsonar.login=$SONAR_TOKEN \
             -Dsonar.branch.name=main
 
-      - name: Install Python dependencies
-        run: pip install requests reportlab
-
-      - name: Create PDF Report Script File
-        run: |
-          mkdir -p report
-          cat << 'EOF' > generate_pdf.py
-import requests
-from reportlab.lib.pagesizes import letter
-from reportlab.pdfgen import canvas
-import os
-
-SONAR_TOKEN = os.environ.get("SONAR_TOKEN")
-component = "sonamsuragini1_dcm4che2"
-
-# Fetch summary metrics
-metrics_url = f"https://sonarcloud.io/api/measures/component?component={component}&metricKeys=bugs,vulnerabilities,code_smells,coverage,duplicated_lines_density"
-metrics_response = requests.get(metrics_url, auth=(SONAR_TOKEN, ""))
-metrics_data = metrics_response.json()
-metrics = {item["metric"]: item["value"] for item in metrics_data["component"]["measures"]}
-
-# Fetch vulnerabilities and hotspots
-vuln_url = f"https://sonarcloud.io/api/issues/search?componentKeys={component}&types=VULNERABILITY&ps=100"
-hotspot_url = f"https://sonarcloud.io/api/issues/search?componentKeys={component}&types=SECURITY_HOTSPOT&ps=100"
-vuln_resp = requests.get(vuln_url, auth=(SONAR_TOKEN, ""))
-hotspot_resp = requests.get(hotspot_url, auth=(SONAR_TOKEN, ""))
-vulnerabilities = vuln_resp.json().get("issues", [])
-hotspots = hotspot_resp.json().get("issues", [])
-
-# Generate PDF
-c = canvas.Canvas("report/sonarcloud_report.pdf", pagesize=letter)
-c.setFont("Helvetica-Bold", 16)
-c.drawString(50, 750, "SonarCloud Report - dcm4che-core")
-c.setFont("Helvetica", 12)
-y = 720
-
-for metric, value in metrics.items():
-    c.drawString(50, y, f"{metric.replace('_', ' ').capitalize()}: {value}")
-    y -= 20
-
-# Vulnerabilities
-y -= 10
-c.setFont("Helvetica-Bold", 14)
-c.drawString(50, y, "Security Vulnerabilities")
-y -= 20
-c.setFont("Helvetica", 11)
-
-if not vulnerabilities:
-    c.drawString(50, y, "No vulnerabilities found.")
-else:
-    for issue in vulnerabilities:
-        msg = issue.get("message", "No message")
-        severity = issue.get("severity", "UNKNOWN")
-        file_path = issue.get("component", "").split(":")[-1]
-        line = issue.get("line", "N/A")
-        rule = issue.get("rule", "").split(":")[-1]
-        entry = f"[{severity}] {rule} in {file_path}:{line} — {msg}"
-        for line_chunk in [entry[i:i+100] for i in range(0, len(entry), 100)]:
-            c.drawString(50, y, line_chunk)
-            y -= 15
-            if y < 50:
-                c.showPage()
-                c.setFont("Helvetica", 11)
-                y = 750
-
-# Hotspots
-y -= 20
-c.setFont("Helvetica-Bold", 14)
-c.drawString(50, y, "Security Hotspots")
-y -= 20
-c.setFont("Helvetica", 11)
-
-if not hotspots:
-    c.drawString(50, y, "No security hotspots found.")
-else:
-    for issue in hotspots:
-        msg = issue.get("message", "No message")
-        severity = issue.get("severity", "UNKNOWN")
-        file_path = issue.get("component", "").split(":")[-1]
-        line = issue.get("line", "N/A")
-        rule = issue.get("rule", "").split(":")[-1]
-        entry = f"[{severity}] {rule} in {file_path}:{line} — {msg}"
-        for line_chunk in [entry[i:i+100] for i in range(0, len(entry), 100)]:
-            c.drawString(50, y, line_chunk)
-            y -= 15
-            if y < 50:
-                c.showPage()
-                c.setFont("Helvetica", 11)
-                y = 750
-
-c.save()
-EOF
-
-      - name: Run PDF Script
+      - name: Generate SonarCloud report
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: python3 generate_pdf.py
+        run: |
+          mkdir -p report
+          curl -s -u $SONAR_TOKEN: \
+            "https://sonarcloud.io/api/measures/component?component=sonamsuragini1_dcm4che2&metricKeys=bugs,vulnerabilities,code_smells,coverage,duplicated_lines_density" \
+            -o report/sonar-report.json
 
-      - name: Upload PDF report artifact
+          echo "## SonarCloud Summary" > report/sonar-report.md
+          echo "\`\`\`json" >> report/sonar-report.md
+          cat report/sonar-report.json >> report/sonar-report.md
+          echo "\`\`\`" >> report/sonar-report.md
+
+      - name: Upload report artifact
         uses: actions/upload-artifact@v4
         with:
-          name: sonarcloud-pdf-report
-          path: report/sonarcloud_report.pdf
+          name: sonarcloud-report
+          path: report/
