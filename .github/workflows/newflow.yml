@@ -50,7 +50,7 @@ jobs:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
         run: |
           mkdir -p report
-          cat <<EOF > generate_report.py
+          echo '
 import requests
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
@@ -138,7 +138,7 @@ else:
                 y = 750
 
 c.save()
-EOF
+          ' > generate_report.py
           python3 generate_report.py
 
       - name: Upload PDF report artifact
